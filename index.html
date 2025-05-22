@@ -52,6 +52,7 @@
 
   <script>
     const token = "pq1lubyb23x3y893bjr8a2b42q4gqmtb";
+    const device_sn = "BZP4NXM001";
     const timestamps = [];
     const powerData = [];
 
@@ -78,13 +79,12 @@
     });
 
     async function fetchData() {
-      const res = await fetch("https://server.growatt.com/device/v1/power/plant", {
-        method: "POST",
+      const res = await fetch(`https://server.growatt.com/v1/device/inverter/last_new_data?device_sn=${device_sn}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({})
+        }
       });
 
       const json = await res.json();
