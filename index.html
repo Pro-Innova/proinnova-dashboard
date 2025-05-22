@@ -1,125 +1,50 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Proinnova PV-Monitor</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f0f4f8;
-      color: #333;
-      padding: 20px;
-      max-width: 800px;
-      margin: auto;
-    }
-    h1 {
-      text-align: center;
-    }
-    .card {
-      background: white;
-      padding: 20px;
-      margin: 10px 0;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    .label {
-      font-weight: bold;
-    }
-    canvas {
-      margin-top: 20px;
-    }
-    .alert {
-      color: red;
-      font-weight: bold;
-      margin-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <h1>☀️ Proinnova PV-Monitor</h1>
-  <div class="card">
-    <div><span class="label">⚡️ Aktuelle Leistung:</span> <span id="power">-</span> W</div>
-    <div><span class="label">📊 Tagesertrag:</span> <span id="daily">-</span> kWh</div>
-    <div><span class="label">📈 Monatsertrag:</span> <span id="monthly">-</span> kWh</div>
-    <div><span class="label">🔧 Status:</span> <span id="status">-</span></div>
-    <div><span class="label">🕒 Letzte Aktualisierung:</span> <span id="updated">-</span></div>
-    <div id="alert" class="alert"></div>
-  </div>
+from flask import Flask, render_template, jsonify
+import requests
+import time
+import threading
 
-  <canvas id="powerChart" height="100"></canvas>
+app = Flask(__name__)
 
-  <script>
-    const token = "pq1lubyb23x3y893bjr8a2b42q4gqmtb";
-    const timestamps = [];
-    const powerData = [];
+# Zugangsdaten und Konfiguration
+USERNAME = "AKBSolar1"
+PASSWORD = "cunku7-vopfaz-Kabhon"  # Muss manuell ersetzt werden
+SN = "BZP4NXM001"
+LOGIN_URL = "https://server.growatt.com/login"
+DATA_URL = "https://server.growatt.com/newEnergyAPI.do?action=getInvTodayData"
 
-    const chartCtx = document.getElementById("powerChart").getContext("2d");
-    const powerChart = new Chart(chartCtx, {
-      type: 'line',
-      data: {
-        labels: timestamps,
-        datasets: [{
-          label: 'PV-Leistung (W)',
-          data: powerData,
-          fill: false,
-          borderColor: 'rgba(75, 192, 192, 1)',
-          tension: 0.1
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          x: { display: true, title: { display: true, text: 'Zeit' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Leistung (W)' } }
-        }
-      }
-    });
+data_cache = {}
 
-    async function fetchData() {
-      const res = await fetch("https://server.growatt.com/device/v1/power/plant", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({})
-      });
+# Login-Funktion zur Token-Erstellung
+def login():
+    response = requests.post(LOGIN_URL, data={"userName": USERNAME, "password": PASSWORD})
+    cookies = response.cookies.get_dict()
+    return cookies
 
-      const json = await res.json();
-      if (!json || !json.data) {
-        document.getElementById("alert").textContent = "Fehler beim Abruf der Daten.";
-        return;
-      }
+# Daten vom Growatt-Server abrufen
+def fetch_data():
+    global data_cache
+    try:
+        cookies = login()
+        response = requests.post(DATA_URL, data={"invSn": SN}, cookies=cookies)
+        result = response.json()
+        data_cache = result.get("data", {})
+    except Exception as e:
+        print("Fehler beim Datenabruf:", e)
 
-      const d = json.data;
-      const time = new Date().toLocaleTimeString();
+# Regelmäßiger Abruf im Hintergrund
+def scheduler():
+    while True:
+        fetch_data()
+        time.sleep(300)  # 5 Minuten
 
-      document.getElementById("power").textContent = d.pac || "0";
-      document.getElementById("daily").textContent = d.eToday || "-";
-      document.getElementById("monthly").textContent = d.eMonth || "-";
-      document.getElementById("status").textContent = d.status || "Unbekannt";
-      document.getElementById("updated").textContent = time;
+@app.route("/")
+def index():
+    return render_template("index.html", data=data_cache)
 
-      if (d.status && d.status.toLowerCase().includes("standby")) {
-        document.getElementById("alert").textContent = "⚠️ Der Wechselrichter befindet sich im Standby-Modus.";
-      } else {
-        document.getElementById("alert").textContent = "";
-      }
+@app.route("/data")
+def get_data():
+    return jsonify(data_cache)
 
-      // Diagrammdaten aktualisieren
-      if (timestamps.length > 20) {
-        timestamps.shift();
-        powerData.shift();
-      }
-      timestamps.push(time);
-      powerData.push(Number(d.pac || 0));
-      powerChart.update();
-    }
-
-    fetchData();
-    setInterval(fetchData, 300000); // alle 5 Minuten
-  </script>
-</body>
-</html>
+if __name__ == "__main__":
+    threading.Thread(target=scheduler, daemon=True).start()
+    app.run(debug=True, port=5000)
